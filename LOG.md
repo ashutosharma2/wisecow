@@ -1,0 +1,3 @@
+# Build log (one line per session: the date, what shipped, what I learned)
+
+- 2026-11-15: Dockerfile (ADR-001), Kubernetes manifests with TLS through Traefik and cert-manager (ADR-002), and kind scripts to set up, deploy and smoke-test. Verified on a local kind cluster: HTTPS 200 with a verified certificate, HTTP redirects to HTTPS, and the NetworkPolicy blocks other namespaces. Learned: wisecow serves one connection at a time, so it needs two replicas; when a Deployment shows no events, check the control plane before the manifest; under `set -e`, `read` fails on input without a trailing newline.

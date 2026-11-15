@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Base image digest in the Dockerfile
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  # Commit SHAs of the actions used in .github/workflows
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
