@@ -1,0 +1,195 @@
+# CI/CD for wisecow (see docs/adr/003-ci-cd-pipeline.md)
+#
+#   lint ──▶ build (push to GHCR) ──▶ deploy (kind in the runner, by digest) ──▶ smoke test
+#
+# Pull requests run lint and build only: nothing is pushed or deployed.
+# Third-party actions are pinned to commit SHAs; Dependabot keeps them current.
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege by default; jobs that need more ask for it.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ShellCheck (hack/ scripts)
+        run: shellcheck hack/*.sh
+
+      - name: Hadolint (Dockerfile)
+        run: docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d < Dockerfile
+
+      - name: Kubeconform (Kubernetes manifests)
+        env:
+          KUBECONFORM_VERSION: v0.8.0
+          KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+        run: |
+          curl -sSfLo kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum --check --strict
+          tar -xzf kubeconform.tar.gz kubeconform
+          # cert-manager CRD schemas come from the community CRDs catalog.
+          kubectl kustomize k8s | ./kubeconform -strict -summary \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          ./kubeconform -strict -summary \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            k8s/extras
+
+  build:
+    name: Build and push image
+    needs: lint
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write # push to GHCR with GITHUB_TOKEN
+    outputs:
+      image: ${{ steps.ref.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU (for the arm64 build)
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Image name (GHCR needs lowercase)
+        id: ref
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wisecow" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.ref.outputs.image }}
+          # sha-<short commit> on every build; latest only on main.
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build (and push, except on pull requests)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Summary
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.ref.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Pushed image"
+            echo "Digest: \`${IMAGE}@${DIGEST}\`"
+            echo
+            echo "Tags:"
+            while read -r tag; do echo "- \`${tag}\`"; done <<< "${TAGS}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy to kind and smoke-test
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read # pull the image from GHCR
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create kind cluster
+        uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: wisecow
+          config: hack/kind-config.yaml
+
+      - name: Install Traefik and cert-manager
+        run: hack/setup-cluster.sh
+
+      - name: Create GHCR pull secret
+        # The package is private by default. GITHUB_TOKEN expires when this
+        # job ends, which is fine: so does the cluster.
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          kubectl create namespace wisecow --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n wisecow create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username="$GHCR_USER" \
+            --docker-password="$GHCR_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          # Attach it to the namespace's default ServiceAccount, so k8s/
+          # stays unchanged and still works with a public image.
+          until kubectl -n wisecow get serviceaccount default >/dev/null 2>&1; do sleep 1; done
+          kubectl -n wisecow patch serviceaccount default \
+            -p '{"imagePullSecrets":[{"name":"ghcr-pull"}]}'
+
+      - name: Deploy the image by digest
+        run: hack/deploy.sh "$IMAGE"
+
+      - name: Smoke test (HTTPS + redirect)
+        run: hack/smoke-test.sh
+
+      - name: Confirm the running image is the one just built
+        run: |
+          kubectl -n wisecow get pods -l app.kubernetes.io/name=wisecow \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.status.containerStatuses[0].imageID}{"\n"}{end}'
+          want="${IMAGE#*@}"
+          got="$(kubectl -n wisecow get pods -l app.kubernetes.io/name=wisecow \
+                   -o jsonpath='{.items[*].status.containerStatuses[0].imageID}')"
+          for id in $got; do
+            [ "${id#*@}" = "$want" ] || { echo "::error::pod runs ${id}, expected digest ${want}"; exit 1; }
+          done
+          echo "All pods run ${want}"
+          {
+            echo "### Deployed to kind"
+            echo "\`${IMAGE}\` passed the HTTPS smoke test."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnostics (on failure)
+        if: failure()
+        run: |
+          set +e
+          kubectl get pods -A -o wide
+          kubectl -n wisecow get all,ingress,certificate,secret
+          kubectl -n wisecow describe pods
+          kubectl -n wisecow get events --sort-by=.lastTimestamp
+          kubectl -n wisecow logs -l app.kubernetes.io/name=wisecow --all-containers --tail=50
+          kubectl -n traefik logs deploy/traefik --tail=50
+          kubectl -n cert-manager logs deploy/cert-manager --tail=50
