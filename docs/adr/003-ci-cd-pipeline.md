@@ -35,16 +35,18 @@ Alternatives considered:
 
 ## Result
 
-First run on 2026-11-15 ([run 43739109811](https://github.com/ashutosharma2/wisecow/actions/runs/43739109811)):
+First run on 2026-11-15 ([run 43740820098](https://github.com/ashutosharma2/wisecow/actions/runs/43740820098)). The first attempt was refused at the push (see Troubleshooting); the second attempt passed:
 
-- **Lint** passed in 11 s.
-- **Build and push** passed in 75 s for both architectures, with no stored credentials. GHCR received `ghcr.io/ashutosharma2/wisecow@sha256:dbebf4ce5ddbec4522e1777e7ba6ed05d46b3b6bdab89ce0d0f6321bc8589078`, tagged `sha-<short commit>` and `latest`.
+- **Lint** passed in 18 s.
+- **Build and push** passed in 77 s for both architectures, with no stored credentials. GHCR received `ghcr.io/ashutosharma2/wisecow@sha256:9de0f5f314e48f0e450c9c68d1ea05ca8b98a31fbfa4d07f7bd39117412a7095`, tagged `sha-<short commit>` and `latest`.
 - **Deploy to kind and smoke test** passed in 1 min 42 s: cluster created, Traefik and cert-manager installed, the image pulled from GHCR through the pull secret, `https://wisecow.local` returned 200 with a certificate that verified against the cluster CA (subject `CN = wisecow.local`, issuer `CN = wisecow-ca`), and `http://` returned 301 to HTTPS.
-- **Both pods ran exactly the pushed digest** (`imageID` `…@sha256:dbebf4ce…`), so the image built in this run is the one that was tested.
-- The whole pipeline, from push to a verified HTTPS deployment, took 3 min 12 s.
+- **Both pods ran exactly the pushed digest** (`imageID` `…@sha256:9de0f5f3…`), so the image built in this run is the one that was tested.
+- The three jobs take about 3 min 17 s from push to a verified HTTPS deployment.
 - **Limit:** the cluster is deleted when the job ends, so there is no environment left running to open. A persistent cluster would need a stored credential (see Alternatives).
 
 ## Troubleshooting
 
 - **actionlint caught a false alarm before the first push.** The run-summary step used `sed 's/^/- `/'` to wrap tags in Markdown backticks. ShellCheck (inside actionlint) reported SC2016, "expressions don't expand in single quotes", because it reads backticks as command substitution. The backticks were meant literally, but the line was rewritten as a `while read` loop so the lint stays clean and a real warning can't hide among accepted ones.
 - **Lesson:** lint the workflow file itself before pushing (`actionlint`). A mistake in CI configuration otherwise only shows up after a push, as a failed run.
+- **The new repository couldn't push its image.** I deleted and recreated the repository to clean up its commit history. The first build in the new repository failed with `denied: permission_denied: write_package`. Deleting a repository doesn't delete its GHCR packages: the old `wisecow` package still existed, and only the deleted repository was allowed to write to it. Deleting the package and rerunning the failed jobs fixed it; the rerun created a fresh package owned by the new repository.
+- **Lesson:** a GHCR package outlives its repository. Before reusing a repository name, delete the old package or give the new repository write access to it (Package settings → Manage Actions access).

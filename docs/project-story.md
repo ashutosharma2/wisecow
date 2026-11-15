@@ -69,7 +69,7 @@ The deliverable is a public GitHub repository.
 - Both pods run as non-root under the restricted policy with a read-only filesystem.
 - A pod in another namespace can't reach the app directly; Traefik can.
 - Manifests and scripts are in Git; the image builds reproducibly from a pinned base.
-- The first pipeline run went from push to a verified HTTPS deployment in 3 min 12 s, with no stored secrets: lint 11 s, build and push for amd64 and arm64 75 s, deploy and smoke test 1 min 42 s. Both pods ran exactly the digest the build pushed.
+- The pipeline's jobs take about 3 min 17 s from push to a verified HTTPS deployment, with no stored secrets: lint 18 s, build and push for amd64 and arm64 77 s, deploy and smoke test 1 min 42 s. Both pods ran exactly the digest the build pushed.
 
 ## T: Troubleshooting
 
@@ -77,3 +77,4 @@ The deliverable is a public GitHub repository.
 2. **The cluster wouldn't create pods.** After `kubectl apply`, the Deployment sat at 0/2 with no events. `kube-controller-manager` and `kube-scheduler` were in CrashLoopBackOff with `leaderelection lost`: two kind clusters were sharing a 4 GB Docker VM and the API server was too slow to renew their leases. They recovered on their own after a few restarts and both pods came up. Lesson: when a Deployment shows no events at all, check the control plane before the manifest.
 3. **The smoke test stopped silently.** HTTPS passed, then the script exited without a message. `read` returned 1 because curl's `-w` output had no trailing newline, and `set -e` ended the script. Lesson: end parsed `curl -w` formats with `\n`.
 4. **The workflow failed lint before it ever ran.** actionlint flagged Markdown backticks inside single quotes in the run-summary step (ShellCheck SC2016). They were intentional, but the line was rewritten so the lint stays clean. Lesson: run `actionlint` on workflow files before pushing; otherwise CI mistakes only show up as failed runs.
+5. **The recreated repository couldn't push its image.** I deleted and recreated the repository to clean up its commit history, and its first build failed with `permission_denied: write_package`. The GHCR package from the old repository was still there, because deleting a repository doesn't delete its packages, and only the old repository could write to it. Deleting the package and rerunning the failed jobs fixed it. Lesson: a GHCR package outlives its repository.
