@@ -12,7 +12,7 @@ Every commit must build the image and push it to a container registry. The chall
 - **GitHub's hosted runners can't reach my cluster.** The kind cluster runs on my laptop, behind my home network, with no public address. A managed cloud cluster would be reachable, but it costs money every hour and needs a long-lived kubeconfig stored as a secret.
 - **Registry credentials are another secret to manage.** Docker Hub needs a stored access token that can leak and has to be rotated.
 - **Tags move.** `latest`, or even `sha-<commit>`, can be pushed over. A deploy that names a tag can end up running something other than what was just built and tested.
-- **New GHCR packages are private.** A cluster can't pull the image anonymously.
+- **A GHCR package may be private.** GitHub's documented default for a new package is private, and a cluster can't pull a private image anonymously.
 - **Pull requests from forks get a read-only token**, so they can't push images.
 
 ## Action
@@ -21,9 +21,9 @@ Every commit must build the image and push it to a container registry. The chall
 2. **Deploy target: a kind cluster created inside the runner** for every push to `main`. It runs the same `hack/` scripts used locally: cluster config, Traefik and cert-manager, deploy, smoke test.
 3. **The cluster pulls the image from GHCR**, through a `docker-registry` pull secret made from `GITHUB_TOKEN` and attached to the namespace's default ServiceAccount. That tests the artifact that was actually published, not a copy loaded from the runner's local Docker. The token expires when the job ends, and so does the cluster.
 4. **Deploy by digest.** The build job outputs the digest of the image it pushed, and the deploy job runs `hack/deploy.sh ghcr.io/ashutosharma2/wisecow@sha256:…`. After the smoke test, the job checks that every running pod reports that same digest.
-5. **Pipeline shape:** `lint → build → deploy`. Lint runs ShellCheck, Hadolint and kubeconform (cert-manager schemas from the CRDs catalog) so mistakes fail in seconds. Pull requests run lint and build only, and never push or deploy.
+5. **Pipeline shape:** `lint → build → deploy`. Lint runs ShellCheck, Hadolint and kubeconform (cert-manager schemas from the CRDs catalog) so mistakes fail in seconds. Pull requests are configured to run lint and build only, and never push or deploy (not yet exercised by a real pull request).
 6. **Images for both architectures** (`linux/amd64`, `linux/arm64`), tagged `sha-<short commit>` and, on `main`, `latest`. Tags are for people; deploys use the digest.
-7. **Supply chain:** every third-party action is pinned to a commit SHA, and the kubeconform download is checked against its published SHA-256. Dependabot proposes updates.
+7. **Supply chain:** every third-party action is pinned to a commit SHA, the ShellCheck and Hadolint images are pinned by digest, and the kubeconform download is checked against its published SHA-256. Dependabot proposes updates for the actions and the base image; the lint tool versions are bumped by hand.
 8. **Evidence:** the run summary lists the pushed digest and tags and the deployed image. If deploy or the smoke test fails, the job prints pods, events and controller logs before the cluster disappears.
 
 Alternatives considered:
@@ -43,6 +43,7 @@ First run on 2026-11-15 ([run 43740820098](https://github.com/ashutosharma2/wise
 - **Both pods ran exactly the pushed digest** (`imageID` `…@sha256:9de0f5f3…`), so the image built in this run is the one that was tested.
 - The three jobs take about 3 min 17 s from push to a verified HTTPS deployment.
 - **Limit:** the cluster is deleted when the job ends, so there is no environment left running to open. A persistent cluster would need a stored credential (see Alternatives).
+- **The package came out public.** An anonymous pull of `ghcr.io/ashutosharma2/wisecow` works (HTTP 200 without credentials), so for this public repository the pull secret is a safeguard rather than a requirement. It keeps the pipeline working if the package is ever made private.
 
 ## Troubleshooting
 

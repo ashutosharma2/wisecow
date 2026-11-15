@@ -12,7 +12,7 @@ Wisecow is a single bash script, `wisecow.sh`. It serves `fortune | cowsay` as a
 The script looks trivial, but it makes assumptions about its environment that a container doesn't meet by default:
 
 - **It needs OpenBSD netcat.** It runs `nc -lN`. The `-N` flag (close the connection when input ends) only exists in the OpenBSD variant. Other netcats either reject it or never close the connection, so the browser hangs.
-- **Debian puts `fortune` and `cowsay` in `/usr/games`**, which isn't on the default `PATH`. The script's own prerequisite check fails and it exits with "Install prerequisites."
+- **Debian puts `fortune` and `cowsay` in `/usr/games`**, which isn't on the container's `PATH`. (Debian adds it for normal login users, which is why the script works on a desktop, but not in images or for root.) The script's own prerequisite check fails and it exits with "Install prerequisites."
 - **`fortune-mod` alone has no fortunes.** With `--no-install-recommends` the fortune database isn't installed, and `fortune` prints nothing.
 - **It writes to its working directory.** It creates a named pipe called `response` in the current directory at startup, so that directory must be writable. That conflicts with a read-only root filesystem.
 - **Bash as PID 1 ignores SIGTERM.** Without an init process, `docker stop` and pod termination wait for the full grace period and then kill the container.
@@ -25,7 +25,7 @@ The script looks trivial, but it makes assumptions about its environment that a 
 3. `ENV PATH="/usr/games:${PATH}"` so the script finds `fortune` and `cowsay` without being edited.
 4. Run as a fixed non-root user (UID/GID 10001). The script is copied read-only (`0555`) to `/app/wisecow.sh`. The only writable path is the working directory `/app/run`, owned by that user. In Kubernetes, `/app/run` and `/tmp` are `emptyDir` volumes, so the root filesystem can be read-only.
 5. `tini -g` as the entrypoint. It forwards SIGTERM to the whole process group and reaps the `nc`/`cat` children the script spawns.
-6. Leave `wisecow.sh` unchanged. The single-connection limit is handled at the deployment level (two replicas behind a Service; see [ADR-002](002-tls-at-the-ingress.md)), not by rewriting the app.
+6. Leave `wisecow.sh` unchanged. The single-connection limit is handled at the deployment level, not by rewriting the app: two replicas behind the Service, with `maxUnavailable: 0` so a rollout never drops to zero (`k8s/deployment.yaml`; Action 2 in the [project story](../project-story.md)).
 7. `.dockerignore` sends only `wisecow.sh` to the build context.
 
 Alternatives considered:

@@ -1,9 +1,10 @@
 # CI/CD for wisecow (see docs/adr/003-ci-cd-pipeline.md)
 #
-#   lint ──▶ build (push to GHCR) ──▶ deploy (kind in the runner, by digest) ──▶ smoke test
+#   lint ──▶ build (push to GHCR) ──▶ deploy (kind in the runner, by digest) ──▶ smoke test + app health check
 #
 # Pull requests run lint and build only: nothing is pushed or deployed.
-# Third-party actions are pinned to commit SHAs; Dependabot keeps them current.
+# Third-party actions are pinned to commit SHAs (Dependabot keeps them current);
+# lint tools are pinned by image digest or download checksum.
 name: CI/CD
 
 on:
@@ -26,7 +27,11 @@ jobs:
           persist-credentials: false
 
       - name: ShellCheck (hack/ and problem-statement-2/ scripts)
-        run: shellcheck hack/*.sh problem-statement-2/*.sh
+        # Pinned image, so CI and local runs use the same ShellCheck version.
+        run: |
+          docker run --rm -v "$PWD:/mnt:ro" -w /mnt \
+            koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            hack/*.sh problem-statement-2/*.sh
 
       - name: Hadolint (Dockerfile)
         run: docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d < Dockerfile
