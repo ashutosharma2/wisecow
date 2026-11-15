@@ -40,6 +40,8 @@ spec:
             - name: http
               containerPort: 4499
               protocol: TCP
+          # Readiness: should this pod get traffic right now? Reacts fast, so
+          # a slow pod drops out of the Service within ~30 s.
           readinessProbe:
             httpGet:
               path: /
@@ -48,14 +50,17 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
+          # Liveness: is this pod stuck past recovery? Tolerates slowness
+          # (10 s timeout, ~2 min of failures) so a starved but working pod
+          # isn't restarted, which would only add load.
           livenessProbe:
             httpGet:
               path: /
               port: http
             initialDelaySeconds: 10
             periodSeconds: 20
-            timeoutSeconds: 3
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m
