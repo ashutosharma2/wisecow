@@ -62,7 +62,9 @@ shift $((OPTIND - 1))
 for value in "$CPU_MAX" "$MEM_MAX" "$DISK_MAX" "$PROC_MAX" "$SAMPLE_SECONDS"; do
   is_number "$value" || die "thresholds and interval must be whole numbers, got '$value'"
 done
-[ -r /proc/stat ] && [ -r /proc/meminfo ] || die "needs Linux (/proc/stat and /proc/meminfo)"
+if [ ! -r /proc/stat ] || [ ! -r /proc/meminfo ]; then
+  die "needs Linux (/proc/stat and /proc/meminfo)"
+fi
 touch "$LOG_FILE" 2>/dev/null || die "can't write to log file $LOG_FILE"
 
 HOST="${HOSTNAME:-$(uname -n)}"

@@ -60,7 +60,9 @@ while [ $# -gt 0 ]; do
 done
 
 [ ${#URLS[@]} -gt 0 ] || { usage >&2; die "give at least one URL"; }
-[[ "$TIMEOUT" =~ ^[0-9]+$ ]] && [ "$TIMEOUT" -gt 0 ] || die "timeout must be a whole number of seconds"
+if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || [ "$TIMEOUT" -eq 0 ]; then
+  die "timeout must be a whole number of seconds"
+fi
 command -v curl >/dev/null 2>&1 || die "curl is not installed"
 touch "$LOG_FILE" 2>/dev/null || die "can't write to log file $LOG_FILE"
 [ "$FOLLOW_REDIRECTS" -eq 1 ] && CURL_EXTRA+=(-L --max-redirs 5)
