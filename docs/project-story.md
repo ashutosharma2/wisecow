@@ -20,11 +20,11 @@ The deliverable is a public GitHub repository.
 ## O: Obstacles
 
 1. **The app wasn't written for containers.** It needs OpenBSD netcat for `nc -lN`, finds `fortune` and `cowsay` only if `/usr/games` is on the `PATH`, writes a named pipe into its working directory, and as PID 1 ignores SIGTERM.
-2. **It serves one connection at a time.** Netcat restarts between requests, so a single replica refuses connections during that window, including the kubelet's health probes.
+2. **It serves one connection at a time.** Netcat restarts between requests, so a single replica can refuse connections during that window, health probes included.
 3. **The app can't speak TLS**, and a local cluster has no public domain for a trusted certificate.
-4. **The most common ingress controller is retired.** `ingress-nginx` stopped receiving fixes in March 2026.
+4. **The most common ingress controller is retired.** `ingress-nginx` stopped receiving fixes in March 2026 ([ADR-002](adr/002-tls-at-the-ingress.md)).
 5. **CI can't reach a laptop.** GitHub's hosted runners have no route to a kind cluster on my machine, so "deploy after every build" needs a cluster the pipeline can reach.
-6. **Health checks need exact rules.** CPU usage can't be read in one go, `MemFree` makes a healthy machine look full, and "up" has to cover redirects, hangs and bad certificates, including wisecow's own `http://` redirect.
+6. **Health checks need exact rules.** CPU usage can't be read in one go, `MemFree` makes a healthy machine look full, and "up" has to cover redirects, hangs and bad certificates, including wisecow's own `http://` redirect ([ADR-004](adr/004-health-scripts.md)).
 
 ## A: Actions
 
@@ -76,18 +76,27 @@ The deliverable is a public GitHub repository.
 - `https://wisecow.local` returns 200 with a cow and a certificate that verifies against the cluster CA; `http://` returns 301 to HTTPS.
 - Both pods run as non-root under the restricted policy with a read-only filesystem.
 - A pod in another namespace can't reach the app directly; Traefik can.
-- Manifests and scripts are in Git; the image builds reproducibly from a pinned base.
+- Manifests and scripts are in Git, and the image builds from a pinned base image. Builds aren't byte-for-byte reproducible: the apt packages aren't version-pinned, and each build stamps its commit and time into the image labels, so every run gets a new digest.
 - The pipeline's jobs take about 3 min 17 s from push to a verified HTTPS deployment, with no stored secrets: lint 18 s, build and push for amd64 and arm64 77 s, deploy and smoke test 1 min 42 s. Both pods ran exactly the digest the build pushed.
 - The monitor caught a 98% CPU load in a test container and exited 1; the checker told apart 200, 301, 404, refused, timed out, DNS and certificate failures, each with its reason, on bash 3.2.
+- In CI, right after each deployment, the checker reports the app UP. In [run 43748030440](https://github.com/ashutosharma2/wisecow/actions/runs/43748030440) that was `https://wisecow.local/` with HTTP 200 in 36 ms, verified against the cluster's CA.
+
+### Known limits
+
+- **Nothing stays deployed.** Continuous deployment targets a kind cluster that exists only for the length of the job, so there's no running environment to open ([ADR-003](adr/003-ci-cd-pipeline.md)).
+- **One connection at a time.** Two replicas hide the app's single-connection design; they don't remove it.
+- **The pull-request path hasn't run.** Building without pushing or deploying is configured but untested.
+- **Lint tools are updated by hand.** ShellCheck, Hadolint and kubeconform are pinned; Dependabot only covers the actions and the base image.
+- **The health monitor is Linux-only**, because it reads `/proc`.
 
 ## T: Troubleshooting
 
 1. **The third request failed.** Two quick requests worked and a third got no response. Sixty more requests at different gaps all worked, so it's the brief netcat restart window, not a bug. Fix: two replicas behind the Service. Lesson: test several requests, not one.
-2. **The cluster wouldn't create pods.** After `kubectl apply`, the Deployment sat at 0/2 with no events. `kube-controller-manager` and `kube-scheduler` were in CrashLoopBackOff with `leaderelection lost`: two kind clusters were sharing a 4 GB Docker VM and the API server was too slow to renew their leases. They recovered on their own after a few restarts and both pods came up. Lesson: when a Deployment shows no events at all, check the control plane before the manifest.
+2. **The cluster wouldn't create pods.** After `kubectl apply`, the Deployment sat at 0/2 with no events. `kube-controller-manager` and `kube-scheduler` were in CrashLoopBackOff with `leaderelection lost`: two kind clusters were sharing a 4 GB Docker VM and the API server was too slow to renew their leases. They recovered on their own after a few restarts and both pods came up. Lesson: when a Deployment shows no events at all, check the control plane before the manifest. The real fix is giving the local cluster room: stop the other cluster, or raise Docker's memory limit.
 3. **The smoke test stopped silently.** HTTPS passed, then the script exited without a message. `read` returned 1 because curl's `-w` output had no trailing newline, and `set -e` ended the script. Lesson: end parsed `curl -w` formats with `\n`.
 4. **The workflow failed lint before it ever ran.** actionlint flagged Markdown backticks inside single quotes in the run-summary step (ShellCheck SC2016). They were intentional, but the line was rewritten so the lint stays clean. Lesson: run `actionlint` on workflow files before pushing; otherwise CI mistakes only show up as failed runs.
 5. **The recreated repository couldn't push its image.** I deleted and recreated the repository to clean up its commit history, and its first build failed with `permission_denied: write_package`. The GHCR package from the old repository was still there, because deleting a repository doesn't delete its packages, and only the old repository could write to it. Deleting the package and rerunning the failed jobs fixed it. Lesson: a GHCR package outlives its repository.
-6. **The app checker found a real outage.** Run against the local cluster, it reported wisecow DOWN: timeouts, then `HTTP 502` from Traefik. `kubectl` showed why. The Docker VM was shared with another kind cluster using over 500% CPU, wisecow's pods had restarted 15 to 18 times on failed liveness probes, and the controller-manager was crash-looping. Lesson: when a checker says DOWN, believe it until `kubectl` says otherwise.
+6. **The app checker found a real outage.** Run against the local cluster, it reported wisecow DOWN: timeouts, then `HTTP 502` from Traefik. `kubectl` showed why. The Docker VM was shared with another kind cluster using over 500% CPU, wisecow's pods had restarted 15 to 18 times on failed liveness probes, and the controller-manager was crash-looping. This was the same contention as entry 2, back under heavier load, and I hadn't fixed it the first time. Lesson: when a checker says DOWN, believe it until `kubectl` says otherwise, and fix an environment problem the first time it shows up.
 7. **Container quirks in the monitor's first run.** `df` listed bind-mounted files like `/etc/hosts` as disks, and `ps` reported itself at 150% CPU in the top-5 list. Both are now filtered out. Lesson: test a system script where it will actually run, not just where it was written.
 8. **CI rejected lint that passed locally.** The runner's ShellCheck flagged two `A && B || die` lines (SC2015) that my local v0.11.0 accepted. They became explicit `if` statements and now pass v0.9 to v0.11, and CI now runs the same pinned ShellCheck image as my machine. Lesson: lint locally with the version CI uses, and pin it.
 9. **A reviewer's read found my own overstatements.** Reading the README and ADRs as a reviewer turned up a wrong cross-reference, two "nothing else changes" claims that weren't true, an unsourced claim, and a README hint (`kubectl apply -k k8s`) that fails on a cluster without cert-manager. It also showed that the GHCR package is public, although the docs said new packages are private. All are fixed. Lesson: check every claim in the docs against the code or a real request, not against memory.
