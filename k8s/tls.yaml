@@ -1,0 +1,58 @@
+# TLS certificates, issued by cert-manager.
+#
+# For a local/demo cluster we bootstrap a private CA:
+#   selfsigned Issuer -> wisecow-ca (CA cert) -> wisecow-ca-issuer -> wisecow-tls
+# Clients can then verify the server with the CA in Secret "wisecow-ca"
+# (key ca.crt) instead of turning verification off.
+#
+# On a cluster with a public DNS name, use k8s/extras/letsencrypt-clusterissuer.yaml
+# and point the Certificate's issuerRef at it instead.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wisecow-ca
+spec:
+  isCA: true
+  commonName: wisecow-ca
+  secretName: wisecow-ca
+  duration: 8760h   # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    kind: Issuer
+    name: selfsigned
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: wisecow-ca-issuer
+spec:
+  ca:
+    secretName: wisecow-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wisecow-tls
+spec:
+  secretName: wisecow-tls
+  commonName: wisecow.local
+  dnsNames:
+    - wisecow.local
+  duration: 2160h     # 90 days
+  renewBefore: 360h   # renew 15 days before expiry
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    kind: Issuer
+    name: wisecow-ca-issuer

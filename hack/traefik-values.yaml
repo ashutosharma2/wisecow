@@ -1,0 +1,19 @@
+# Traefik as the ingress controller for the local/CI kind cluster.
+service:
+  spec:
+    type: NodePort
+ports:
+  web:
+    nodePort: 30080
+    # Redirect all plain-HTTP traffic to HTTPS.
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    nodePort: 30443
+ingressClass:
+  enabled: true
+  isDefaultClass: true

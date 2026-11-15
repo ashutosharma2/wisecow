@@ -1,0 +1,22 @@
+# Optional: publicly trusted certificates from Let's Encrypt.
+# Use this instead of the private CA in k8s/tls.yaml when the cluster has a
+# public IP and a real DNS name pointing at the ingress controller.
+#
+#   1. Set your email below and apply:  kubectl apply -f k8s/extras/letsencrypt-clusterissuer.yaml
+#   2. In k8s/tls.yaml and k8s/ingress.yaml replace wisecow.local with your domain.
+#   3. In the wisecow-tls Certificate set:
+#        issuerRef: { kind: ClusterIssuer, name: letsencrypt-prod }
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: you@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
