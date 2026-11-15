@@ -2,9 +2,9 @@
 
 [![CI/CD](https://github.com/ashutosharma2/wisecow/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/ashutosharma2/wisecow/actions/workflows/ci-cd.yml)
 
-Accuknox DevOps Trainee practical assessment: containerise the [Wisecow](https://github.com/nyrahul/wisecow) app, deploy it on Kubernetes behind TLS, and automate build and deployment with GitHub Actions.
+My submission for the Accuknox DevOps Trainee practical assessment: containerise the [Wisecow](https://github.com/nyrahul/wisecow) app, deploy it on Kubernetes behind TLS, and automate the build and deployment with GitHub Actions.
 
-Wisecow is a bash script that answers every HTTP request with a random `fortune` said by `cowsay`. The app script, `wisecow.sh`, is unchanged from upstream.
+Wisecow is a bash script that answers every HTTP request with a random `fortune` said by `cowsay`. I haven't changed the script itself (`wisecow.sh`); everything else in this repo is built around it.
 
 **[Read the project story](docs/project-story.md)**: the problems, decisions and fixes behind this repo, in SOART format. The reasoning for each decision is in the [ADRs](docs/adr/).
 
@@ -43,7 +43,7 @@ lint ──▶ build ───────────────────�
          (tags sha-<short>, latest)         digest                                      pods run that exact digest
 ```
 
-- No stored credentials: GHCR login and the cluster's pull secret both use the job's own `GITHUB_TOKEN`.
+- The pipeline stores no credentials. The GHCR login and the cluster's pull secret both use the job's own `GITHUB_TOKEN`.
 - Pull requests run lint and build only.
 - Images: `ghcr.io/ashutosharma2/wisecow`.
 

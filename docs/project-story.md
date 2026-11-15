@@ -10,7 +10,7 @@ Scenario, Obstacle, Action, Result, Troubleshooting. This is how the assessment 
 
 **Containerise and deploy a tiny bash web server on Kubernetes, with CI/CD and TLS.**
 
-This is the Accuknox DevOps Trainee practical assessment. [Wisecow](https://github.com/nyrahul/wisecow) is a bash script that answers every HTTP request with a random `fortune` said by `cowsay`, using netcat on port 4499. The task:
+This is my Accuknox DevOps Trainee practical assessment. [Wisecow](https://github.com/nyrahul/wisecow) is a bash script that answers every HTTP request with a random `fortune` said by `cowsay`, using netcat on port 4499. The task:
 
 - **Problem Statement 1:** a Dockerfile; Kubernetes manifests that expose the app as a Service; a GitHub Actions workflow that builds and pushes the image on every commit; and two challenge goals, continuous deployment to Kubernetes and TLS.
 - **Problem Statement 2:** two of four operational scripts, in Bash or Python.
@@ -34,7 +34,7 @@ The deliverable is a public GitHub repository.
 - Runs as UID 10001. The script is read-only; the only writable directory is `/app/run`, where it creates its pipe.
 - `tini -g` as PID 1, so stopping the container takes 0.3 s instead of waiting for the 10 s kill.
 
-### 2. Deployed it securely by default (`k8s/`)
+### 2. Locked down the deployment (`k8s/`)
 
 - Namespace enforces the **restricted** Pod Security Standard, so a pod that runs as root or keeps capabilities is rejected.
 - **Two replicas** with `maxUnavailable: 0`, so one pod is always serving while the other restarts netcat, and rollouts never drop to zero. A PodDisruptionBudget keeps at least one up during node maintenance.

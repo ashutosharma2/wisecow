@@ -37,7 +37,7 @@ Alternatives considered:
 - `https://wisecow.local` returns 200 with a cow, and `curl --cacert ca.crt` verifies the chain (`ssl_verify_result 0`). Subject `CN=wisecow.local`, issuer `CN=wisecow-ca`.
 - `http://wisecow.local` returns `301` to `https://wisecow.local/`.
 - A pod in the `default` namespace can't connect to the wisecow Service directly; Traefik can.
-- cert-manager renews the certificate automatically; nothing to rotate by hand.
+- cert-manager renews the certificate before it expires, so I never rotate it by hand.
 
 ## Troubleshooting
 

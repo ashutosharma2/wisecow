@@ -17,11 +17,11 @@ Every commit must build the image and push it to a container registry. The chall
 
 ## Action
 
-1. **Registry: GitHub Container Registry**, authenticated with the workflow's built-in `GITHUB_TOKEN`. No credentials are stored in the repository. Only the build job gets `packages: write`; the deploy job gets `packages: read`; everything else is `contents: read`.
+1. **Registry: GitHub Container Registry**, authenticated with the workflow's built-in `GITHUB_TOKEN`. The repository stores no credentials. Only the build job gets `packages: write`; the deploy job gets `packages: read`; everything else is `contents: read`.
 2. **Deploy target: a kind cluster created inside the runner** for every push to `main`. It runs the same `hack/` scripts used locally: cluster config, Traefik and cert-manager, deploy, smoke test.
 3. **The cluster pulls the image from GHCR**, through a `docker-registry` pull secret made from `GITHUB_TOKEN` and attached to the namespace's default ServiceAccount. That tests the artifact that was actually published, not a copy loaded from the runner's local Docker. The token expires when the job ends, and so does the cluster.
 4. **Deploy by digest.** The build job outputs the digest of the image it pushed, and the deploy job runs `hack/deploy.sh ghcr.io/ashutosharma2/wisecow@sha256:…`. After the smoke test, the job checks that every running pod reports that same digest.
-5. **Pipeline shape:** `lint → build → deploy`. Lint runs ShellCheck, Hadolint and kubeconform (cert-manager schemas from the CRDs catalog) so mistakes fail in seconds. Pull requests run lint and build only; nothing is pushed or deployed.
+5. **Pipeline shape:** `lint → build → deploy`. Lint runs ShellCheck, Hadolint and kubeconform (cert-manager schemas from the CRDs catalog) so mistakes fail in seconds. Pull requests run lint and build only, and never push or deploy.
 6. **Images for both architectures** (`linux/amd64`, `linux/arm64`), tagged `sha-<short commit>` and, on `main`, `latest`. Tags are for people; deploys use the digest.
 7. **Supply chain:** every third-party action is pinned to a commit SHA, and the kubeconform download is checked against its published SHA-256. Dependabot proposes updates.
 8. **Evidence:** the run summary lists the pushed digest and tags and the deployed image. If deploy or the smoke test fails, the job prints pods, events and controller logs before the cluster disappears.
