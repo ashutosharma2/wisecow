@@ -52,6 +52,7 @@ Alternatives considered:
   - `-L` followed the 301 to the HTTPS endpoint.
   - Usage errors: exit 2.
 - Both scripts pass ShellCheck.
+- **In CI** ([run 43748030440](https://github.com/ashutosharma2/wisecow/actions/runs/43748030440)), right after the smoke test, the checker reported the freshly deployed `https://wisecow.local/` UP (HTTP 200 in 36 ms), verified against the cluster's CA.
 
 ## Troubleshooting
 
