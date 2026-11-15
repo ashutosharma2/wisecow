@@ -2,7 +2,7 @@
 
 Scenario, Obstacle, Action, Result, Troubleshooting. This is how the assessment was planned and built, the decisions behind it, and what went wrong along the way. The detailed reasoning for each decision is in the [ADRs](adr/).
 
-**Status:** in progress. The container image (Problem Statement 1, Dockerization), the Kubernetes manifests and TLS are built and tested on a local kind cluster. Next is the GitHub Actions pipeline (build, push, deploy), then the two Problem Statement 2 scripts.
+**Status:** in progress. The container image, the Kubernetes manifests and TLS are built and tested on a local kind cluster. The GitHub Actions pipeline builds and pushes the image on every commit, then deploys it by digest to a kind cluster in the runner and runs the TLS smoke test; the first run passed end to end. Next are the two Problem Statement 2 scripts.
 
 ---
 
@@ -55,15 +55,25 @@ The deliverable is a public GitHub repository.
 - `deploy.sh <image>` deploys any image by tag or digest through a temporary kustomize overlay, so the manifests in Git never need editing to deploy a new build.
 - `smoke-test.sh` checks HTTPS with certificate verification and the HTTP→HTTPS redirect.
 
+### 5. Automated build and deployment ([ADR-003](adr/003-ci-cd-pipeline.md))
+
+- **Registry:** GHCR with the workflow's own `GITHUB_TOKEN`, so no credentials are stored anywhere. Only the build job may push.
+- **Continuous deployment without a public cluster:** every push to `main` creates a kind cluster inside the runner, installs Traefik and cert-manager with the same `hack/` scripts, deploys, and runs the TLS smoke test.
+- **The cluster pulls from GHCR** through a pull secret made from `GITHUB_TOKEN`, so the pipeline tests the image that was actually published.
+- **Pinned by digest:** the deploy uses the exact `sha256` digest the build pushed, and the job fails unless every pod reports that digest.
+- `lint → build → deploy`, with ShellCheck, Hadolint and kubeconform first. Pull requests build but don't push or deploy. Actions are pinned to commit SHAs.
+
 ## R: Results
 
 - `https://wisecow.local` returns 200 with a cow and a certificate that verifies against the cluster CA; `http://` returns 301 to HTTPS.
 - Both pods run as non-root under the restricted policy with a read-only filesystem.
 - A pod in another namespace can't reach the app directly; Traefik can.
 - Manifests and scripts are in Git; the image builds reproducibly from a pinned base.
+- The first pipeline run went from push to a verified HTTPS deployment in 3 min 12 s, with no stored secrets: lint 11 s, build and push for amd64 and arm64 75 s, deploy and smoke test 1 min 42 s. Both pods ran exactly the digest the build pushed.
 
 ## T: Troubleshooting
 
 1. **The third request failed.** Two quick requests worked and a third got no response. Sixty more requests at different gaps all worked, so it's the brief netcat restart window, not a bug. Fix: two replicas behind the Service. Lesson: test several requests, not one.
 2. **The cluster wouldn't create pods.** After `kubectl apply`, the Deployment sat at 0/2 with no events. `kube-controller-manager` and `kube-scheduler` were in CrashLoopBackOff with `leaderelection lost`: two kind clusters were sharing a 4 GB Docker VM and the API server was too slow to renew their leases. They recovered on their own after a few restarts and both pods came up. Lesson: when a Deployment shows no events at all, check the control plane before the manifest.
 3. **The smoke test stopped silently.** HTTPS passed, then the script exited without a message. `read` returned 1 because curl's `-w` output had no trailing newline, and `set -e` ended the script. Lesson: end parsed `curl -w` formats with `\n`.
+4. **The workflow failed lint before it ever ran.** actionlint flagged Markdown backticks inside single quotes in the run-summary step (ShellCheck SC2016). They were intentional, but the line was rewritten so the lint stays clean. Lesson: run `actionlint` on workflow files before pushing; otherwise CI mistakes only show up as failed runs.

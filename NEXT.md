@@ -1,16 +1,16 @@
 # Next session: one task
 
-**Design and build the GitHub Actions pipeline: build and push on every commit, then deploy**
+**Problem Statement 2: build two of the four operational scripts**
 
-The image builds and the manifests deploy and pass the TLS smoke test locally. The pipeline has to:
+Problem Statement 1 is complete: the image, manifests, TLS and the CI/CD pipeline are in place, and the first pipeline run deployed and smoke-tested the image by digest.
 
-1. Build the image and push it to a container registry on every push to `main`.
-2. Challenge goal: deploy the new image to Kubernetes automatically after a successful build.
+Choose two of:
 
-Open questions to decide first:
+1. System health monitor (CPU, memory, disk, processes; alert over a threshold)
+2. Automated backup (directory to a remote server or cloud storage; success/failure report)
+3. Log file analyzer (404s, top pages, top IPs from web server logs)
+4. Application health checker (up/down from HTTP status codes)
 
-- Which registry, and how the workflow authenticates to it.
-- Which cluster the deploy step targets, given GitHub's hosted runners can't reach a kind cluster on a laptop.
-- How the deploy pins the exact image that was just built (tag vs digest).
+Decide the language (Bash or Python), what each script measures, what counts as an alert or "down", and what it reports (output, log file, exit code).
 
-Done when: a push to `main` builds and pushes an image, the deploy job rolls it out, and the run passes the smoke test.
+Done when: both scripts are in the repo with usage instructions and tested against real input.

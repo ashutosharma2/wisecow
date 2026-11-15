@@ -1,5 +1,7 @@
 # Wisecow on Kubernetes
 
+[![CI/CD](https://github.com/ashutosharma2/wisecow/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/ashutosharma2/wisecow/actions/workflows/ci-cd.yml)
+
 Accuknox DevOps Trainee practical assessment: containerise the [Wisecow](https://github.com/nyrahul/wisecow) app, deploy it on Kubernetes behind TLS, and automate build and deployment with GitHub Actions.
 
 Wisecow is a bash script that answers every HTTP request with a random `fortune` said by `cowsay`. The app script, `wisecow.sh`, is unchanged from upstream.
@@ -13,8 +15,8 @@ Wisecow is a bash script that answers every HTTP request with a random `fortune`
 | Dockerfile | Done ([ADR-001](docs/adr/001-container-image.md)) |
 | Kubernetes manifests, exposed as a Service | Done |
 | TLS (challenge goal) | Done ([ADR-002](docs/adr/002-tls-at-the-ingress.md)) |
-| GitHub Actions: build and push on every commit | In progress |
-| Continuous deployment (challenge goal) | In progress |
+| GitHub Actions: build and push on every commit | Done ([ADR-003](docs/adr/003-ci-cd-pipeline.md)) |
+| Continuous deployment (challenge goal) | Done: deploys each build by digest to kind in the runner and smoke-tests it |
 | Problem Statement 2: two scripts | Not started |
 
 ## How it works
@@ -29,6 +31,21 @@ browser ──HTTPS──▶ Traefik Ingress ──HTTP──▶ Service wisecow
 - **Image:** Debian slim with fortune, cowsay, OpenBSD netcat and tini; runs as non-root UID 10001 ([ADR-001](docs/adr/001-container-image.md)).
 - **Workload:** two replicas, because the script serves one connection at a time. HTTP probes, read-only root filesystem, no capabilities, restricted Pod Security Standard.
 - **TLS:** terminated at the Traefik Ingress; cert-manager issues and renews the certificate ([ADR-002](docs/adr/002-tls-at-the-ingress.md)).
+
+## CI/CD pipeline
+
+[`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) runs on every push to `main` ([ADR-003](docs/adr/003-ci-cd-pipeline.md)):
+
+```
+lint ──▶ build ──────────────────────────▶ deploy ─────────────────────────────────▶ smoke test
+         amd64 + arm64, push to GHCR        kind cluster inside the runner,             HTTPS 200 with a verified
+         with GITHUB_TOKEN                  pull from GHCR, pinned to the pushed        certificate, HTTP → HTTPS,
+         (tags sha-<short>, latest)         digest                                      pods run that exact digest
+```
+
+- No stored credentials: GHCR login and the cluster's pull secret both use the job's own `GITHUB_TOKEN`.
+- Pull requests run lint and build only.
+- Images: `ghcr.io/ashutosharma2/wisecow`.
 
 ## Run it locally
 
@@ -70,6 +87,7 @@ Dockerfile              container image
 k8s/                    Kubernetes manifests (kustomize): kubectl apply -k k8s
   extras/               Let's Encrypt issuer for clusters with a real domain
 hack/                   kind cluster setup, deploy and smoke-test scripts
+.github/workflows/      CI/CD pipeline
 docs/project-story.md   SOART write-up
 docs/adr/               architecture decision records
 LOG.md, NEXT.md         build log and the next task
