@@ -2,7 +2,7 @@
 
 Scenario, Obstacle, Action, Result, Troubleshooting. This is how the assessment was planned and built, the decisions behind it, and what went wrong along the way. The detailed reasoning for each decision is in the [ADRs](adr/).
 
-**Status:** in progress. The container image, the Kubernetes manifests and TLS are built and tested on a local kind cluster. The GitHub Actions pipeline builds and pushes the image on every commit, then deploys it by digest to a kind cluster in the runner and runs the TLS smoke test; the first run passed end to end. Next are the two Problem Statement 2 scripts.
+**Status:** both problem statements are done. The image, manifests and TLS are tested on a local kind cluster; the pipeline builds, pushes, deploys by digest to a kind cluster in the runner, and checks it over HTTPS on every commit. The two Problem Statement 2 scripts are tested on Linux and macOS, and the pipeline runs the app checker against each deployment.
 
 ---
 
@@ -24,6 +24,7 @@ The deliverable is a public GitHub repository.
 3. **The app can't speak TLS**, and a local cluster has no public domain for a trusted certificate.
 4. **The most common ingress controller is retired.** `ingress-nginx` stopped receiving fixes in March 2026.
 5. **CI can't reach a laptop.** GitHub's hosted runners have no route to a kind cluster on my machine, so "deploy after every build" needs a cluster the pipeline can reach.
+6. **Health checks need exact rules.** CPU usage can't be read in one go, `MemFree` makes a healthy machine look full, and "up" has to cover redirects, hangs and bad certificates, including wisecow's own `http://` redirect.
 
 ## A: Actions
 
@@ -63,6 +64,13 @@ The deliverable is a public GitHub repository.
 - **Pinned by digest:** the deploy uses the exact `sha256` digest the build pushed, and the job fails unless every pod reports that digest.
 - `lint → build → deploy`, with ShellCheck, Hadolint and kubeconform first. Pull requests build but don't push or deploy. Actions are pinned to commit SHAs.
 
+### 6. Wrote two run-once health scripts ([ADR-004](adr/004-health-scripts.md))
+
+- Both are Bash, run once per call, and report three ways: a console line per check, a timestamped log entry, and an exit code (0 healthy, 1 alert or down, 2 bad usage). cron or CI decides when to run them.
+- **System health monitor:** CPU from two reads of `/proc/stat` a second apart, memory as `MemTotal − MemAvailable`, disk per real filesystem, and the process count, against thresholds of 80/80/90%/500 that flags can change.
+- **App health checker:** 2xx is UP; any other status, a timeout, a refused connection, a DNS failure or a TLS error is DOWN, with the reason. Certificates are always verified (`--cacert` for wisecow's private CA), and `-L` follows redirects when the final page is what matters.
+- The pipeline lints both and runs the checker against every deployment.
+
 ## R: Results
 
 - `https://wisecow.local` returns 200 with a cow and a certificate that verifies against the cluster CA; `http://` returns 301 to HTTPS.
@@ -70,6 +78,7 @@ The deliverable is a public GitHub repository.
 - A pod in another namespace can't reach the app directly; Traefik can.
 - Manifests and scripts are in Git; the image builds reproducibly from a pinned base.
 - The pipeline's jobs take about 3 min 17 s from push to a verified HTTPS deployment, with no stored secrets: lint 18 s, build and push for amd64 and arm64 77 s, deploy and smoke test 1 min 42 s. Both pods ran exactly the digest the build pushed.
+- The monitor caught a 98% CPU load in a test container and exited 1; the checker told apart 200, 301, 404, refused, timed out, DNS and certificate failures, each with its reason, on bash 3.2.
 
 ## T: Troubleshooting
 
@@ -78,3 +87,5 @@ The deliverable is a public GitHub repository.
 3. **The smoke test stopped silently.** HTTPS passed, then the script exited without a message. `read` returned 1 because curl's `-w` output had no trailing newline, and `set -e` ended the script. Lesson: end parsed `curl -w` formats with `\n`.
 4. **The workflow failed lint before it ever ran.** actionlint flagged Markdown backticks inside single quotes in the run-summary step (ShellCheck SC2016). They were intentional, but the line was rewritten so the lint stays clean. Lesson: run `actionlint` on workflow files before pushing; otherwise CI mistakes only show up as failed runs.
 5. **The recreated repository couldn't push its image.** I deleted and recreated the repository to clean up its commit history, and its first build failed with `permission_denied: write_package`. The GHCR package from the old repository was still there, because deleting a repository doesn't delete its packages, and only the old repository could write to it. Deleting the package and rerunning the failed jobs fixed it. Lesson: a GHCR package outlives its repository.
+6. **The app checker found a real outage.** Run against the local cluster, it reported wisecow DOWN: timeouts, then `HTTP 502` from Traefik. `kubectl` showed why. The Docker VM was shared with another kind cluster using over 500% CPU, wisecow's pods had restarted 15 to 18 times on failed liveness probes, and the controller-manager was crash-looping. Lesson: when a checker says DOWN, believe it until `kubectl` says otherwise.
+7. **Container quirks in the monitor's first run.** `df` listed bind-mounted files like `/etc/hosts` as disks, and `ps` reported itself at 150% CPU in the top-5 list. Both are now filtered out. Lesson: test a system script where it will actually run, not just where it was written.

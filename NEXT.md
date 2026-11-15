@@ -1,16 +1,11 @@
 # Next session: one task
 
-**Problem Statement 2: build two of the four operational scripts**
+**Final check, then submit the repository link**
 
-Problem Statement 1 is complete: the image, manifests, TLS and the CI/CD pipeline are in place, and the first pipeline run deployed and smoke-tested the image by digest.
+Both problem statements are done: the image, manifests, TLS and CI/CD pipeline (Problem Statement 1), and the system health monitor and app health checker (Problem Statement 2).
 
-Choose two of:
+1. Confirm the latest pipeline run is green, including the new app health check step.
+2. Read the README, the project story and ADR-001 to ADR-004 top to bottom as a reviewer would, and fix anything unclear.
+3. Submit https://github.com/ashutosharma2/wisecow.
 
-1. System health monitor (CPU, memory, disk, processes; alert over a threshold)
-2. Automated backup (directory to a remote server or cloud storage; success/failure report)
-3. Log file analyzer (404s, top pages, top IPs from web server logs)
-4. Application health checker (up/down from HTTP status codes)
-
-Decide the language (Bash or Python), what each script measures, what counts as an alert or "down", and what it reports (output, log file, exit code).
-
-Done when: both scripts are in the repo with usage instructions and tested against real input.
+Done when: the latest run is green and the link is submitted.

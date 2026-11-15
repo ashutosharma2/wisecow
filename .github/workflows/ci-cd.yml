@@ -25,8 +25,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: ShellCheck (hack/ scripts)
-        run: shellcheck hack/*.sh
+      - name: ShellCheck (hack/ and problem-statement-2/ scripts)
+        run: shellcheck hack/*.sh problem-statement-2/*.sh
 
       - name: Hadolint (Dockerfile)
         run: docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d < Dockerfile
@@ -165,6 +165,14 @@ jobs:
 
       - name: Smoke test (HTTPS + redirect)
         run: hack/smoke-test.sh
+
+      - name: App health check (problem-statement-2/app_health_checker.sh)
+        run: |
+          kubectl -n wisecow get secret wisecow-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > wisecow-ca.crt
+          problem-statement-2/app_health_checker.sh -l app_health.log \
+            --cacert wisecow-ca.crt \
+            --resolve wisecow.local:443:127.0.0.1 \
+            https://wisecow.local/
 
       - name: Confirm the running image is the one just built
         run: |

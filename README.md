@@ -17,7 +17,7 @@ Wisecow is a bash script that answers every HTTP request with a random `fortune`
 | TLS (challenge goal) | Done ([ADR-002](docs/adr/002-tls-at-the-ingress.md)) |
 | GitHub Actions: build and push on every commit | Done ([ADR-003](docs/adr/003-ci-cd-pipeline.md)) |
 | Continuous deployment (challenge goal) | Done: deploys each build by digest to kind in the runner and smoke-tests it |
-| Problem Statement 2: two scripts | Not started |
+| Problem Statement 2: two scripts | Done: [system health monitor and app health checker](problem-statement-2/) ([ADR-004](docs/adr/004-health-scripts.md)) |
 
 ## How it works
 
@@ -46,6 +46,13 @@ lint ──▶ build ───────────────────�
 - The pipeline stores no credentials. The GHCR login and the cluster's pull secret both use the job's own `GITHUB_TOKEN`.
 - Pull requests run lint and build only.
 - Images: `ghcr.io/ashutosharma2/wisecow`.
+
+## Problem Statement 2
+
+Two Bash scripts in [`problem-statement-2/`](problem-statement-2/), both run once and report through a log file and their exit code ([ADR-004](docs/adr/004-health-scripts.md)):
+
+- **`system_health_monitor.sh`** checks CPU (from `/proc/stat`), memory, disk and process count against thresholds and logs every alert.
+- **`app_health_checker.sh`** reports a URL as UP only on a 2xx response; any other status, a timeout or a TLS error is DOWN. The pipeline runs it against every deployment.
 
 ## Run it locally
 
@@ -88,6 +95,7 @@ k8s/                    Kubernetes manifests (kustomize): kubectl apply -k k8s
   extras/               Let's Encrypt issuer for clusters with a real domain
 hack/                   kind cluster setup, deploy and smoke-test scripts
 .github/workflows/      CI/CD pipeline
+problem-statement-2/    health monitor and app health checker scripts
 docs/project-story.md   SOART write-up
 docs/adr/               architecture decision records
 LOG.md, NEXT.md         build log and the next task
